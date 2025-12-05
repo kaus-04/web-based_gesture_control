@@ -4,7 +4,7 @@ export function initTracking() {
     const videoElement = document.getElementById('video-feed');
     const loader = document.getElementById('loader');
 
-    function onResults(results) {
+function onResults(results) {
         loader.style.display = 'none';
 
         if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
@@ -40,8 +40,12 @@ export function initTracking() {
             avgX /= count;
             avgY /= count;
 
-            CONFIG.targetSystemPosition.x = (avgX - 0.5) * 30; 
-            CONFIG.targetSystemPosition.y = -(avgY - 0.5) * 20; 
+            // tried to make it more responsive :"("
+            const sensitivityX = CONFIG.isMobile ? 40 : 30;
+            const sensitivityY = CONFIG.isMobile ? 30 : 20;
+
+            CONFIG.targetSystemPosition.x = (avgX - 0.5) * sensitivityX; 
+            CONFIG.targetSystemPosition.y = -(avgY - 0.5) * sensitivityY; 
 
             CONFIG.targetSystemRotation.y = (avgX - 0.5) * 2; // Yaw
             CONFIG.targetSystemRotation.x = (avgY - 0.5) * 2; // Pitch
