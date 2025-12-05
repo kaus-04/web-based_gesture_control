@@ -129,6 +129,8 @@
             currentShape: 'fireworks'
         };
 
+        const targetSystemPosition = new THREE.Vector3(0, 0, 0);
+        const targetSystemRotation = new THREE.Vector3(0, 0, 0);
         // --- 1. Three.js Setup ---
         const scene = new THREE.Scene();
         scene.fog = new THREE.FogExp2(0x050505, 0.02);
@@ -265,39 +267,54 @@
 
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 let totalTension = 0;
+                let avgX = 0;
+                let avgY = 0;
+                const count = results.multiHandLandmarks.length;
                 
-                // Average tension for all detected hands
                 results.multiHandLandmarks.forEach((landmarks) => {
-                    // Calculate distance between Index Tip (8) and Wrist (0)
-                    // and Thumb Tip (4) and Pinky Tip (20) to estimate "Openness"
-                    
+                    // 1. Existing Tension Logic
                     const wrist = landmarks[0];
                     const indexTip = landmarks[8];
                     const middleTip = landmarks[12];
                     
-                    // Simple distance approximation
                     const d1 = Math.sqrt(Math.pow(indexTip.x - wrist.x, 2) + Math.pow(indexTip.y - wrist.y, 2));
                     const d2 = Math.sqrt(Math.pow(middleTip.x - wrist.x, 2) + Math.pow(middleTip.y - wrist.y, 2));
                     
-                    // Average distance roughly maps 0.1 (fist) to 0.4 (open palm) in normalized coords
                     const rawVal = (d1 + d2) / 2;
-                    
-                    // Normalize to 0-1 range
-                    // Map 0.15 -> 0, 0.35 -> 1
                     let tension = (rawVal - 0.1) * 4.0;
                     if(tension < 0) tension = 0;
                     if(tension > 1.5) tension = 1.5;
-                    
                     totalTension += tension;
+
+                    // 2. Accumulate Position (Center of Palm approx. is index 9)
+                    // We mirror X (1 - x) because the webcam is mirrored
+                    avgX += (1 - landmarks[9].x); 
+                    avgY += landmarks[9].y;
                 });
 
-                // Smooth interpolation for jitter reduction
-                const targetTension = totalTension / results.multiHandLandmarks.length;
+                // Smooth interpolation for tension
+                const targetTension = totalTension / count;
                 CONFIG.handTension += (targetTension - CONFIG.handTension) * 0.1;
+
+                // 3. Update Target Position & Rotation
+                avgX /= count;
+                avgY /= count;
+
+                // Map normalized screen coords (0 to 1) to World Units
+                // X: -15 to 15, Y: 10 to -10
+                targetSystemPosition.x = (avgX - 0.5) * 30; 
+                targetSystemPosition.y = -(avgY - 0.5) * 20; 
+
+                // Map position to Rotation (Parallax effect)
+                // Moving hand left rotates object left, etc.
+                targetSystemRotation.y = (avgX - 0.5) * 2; // Yaw
+                targetSystemRotation.x = (avgY - 0.5) * 2; // Pitch
                 
             } else {
-                // If no hands, drift back to neutral (0.5)
+                // Return to center if no hands detected
                 CONFIG.handTension += (0.5 - CONFIG.handTension) * 0.05;
+                targetSystemPosition.set(0, 0, 0);
+                targetSystemRotation.set(0, 0, 0);
             }
         }
 
@@ -402,8 +419,15 @@
             geometry.attributes.position.needsUpdate = true;
             
             // Rotate entire system slowly
-            particles.rotation.y = time * 0.1;
-            particles.rotation.z = time * 0.05;
+            particles.position.lerp(targetSystemPosition, 0.1);
+
+            // Smoothly rotate based on hand position + continuous spin
+            // We combine the hand-based rotation with the idle time-based rotation
+            const idleRotation = time * 0.1;
+            
+            // Interpolate current rotation to target hand rotation
+            particles.rotation.x += (targetSystemRotation.x - particles.rotation.x) * 0.1;
+            particles.rotation.y += ((targetSystemRotation.y + idleRotation) - particles.rotation.y) * 0.1;
 
             renderer.render(scene, camera);
         }
